@@ -13,7 +13,8 @@ The system monitors a directory in real-time, extracts file features, runs rule-
 ✅ Alert generation and response engine — complete  
 ✅ Ransomware behaviour simulator — complete  
 ✅ Structured logging — complete  
-✅ Unit tests (39 tests) — all passing  
+✅ Unit tests (40 tests) — all passing  
+✅ Runtime model bootstrap — automatically creates the model if it is missing  
 
 ---
 
@@ -97,8 +98,10 @@ source .venv/bin/activate
 ### 3. Install dependencies
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
+
+This installs the required ML, monitoring, and testing libraries before running the project.
 
 ---
 
@@ -137,6 +140,8 @@ The simulator creates 15 harmless text files, rapidly modifies them (triggering 
 ```bash
 python main.py train
 ```
+
+If the model file is missing, the predictor will also generate it automatically on first use.
 
 ### Test the trained ML model
 
@@ -226,10 +231,10 @@ Run all unit tests:
 python -m pytest tests/ -v
 ```
 
-Expected output:
+Verified output on the current setup:
 
 ```
-39 passed in 1.65s
+40 passed in 0.35s
 ```
 
 The test suite covers:

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pandas as pd
 import joblib
 
@@ -66,6 +68,9 @@ def train():
     logger.info("Accuracy : %.4f", accuracy)
     logger.info("Classification Report:\n%s", classification_report(y_test, y_pred))
     logger.info("Confusion Matrix:\n%s", confusion_matrix(y_test, y_pred))
+
+    model_dir = Path(MODEL_PATH).parent
+    model_dir.mkdir(parents=True, exist_ok=True)
 
     joblib.dump(model, MODEL_PATH)
 

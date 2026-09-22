@@ -150,6 +150,13 @@ class TestRansomwareDetector:
         assert "HIGH_ENTROPY" in result["rules_triggered"]
         assert result["suspicious"] is True
 
+    def test_modest_bulk_activity_does_not_trigger_mass_modification(self):
+        result = self.detector.detect(
+            self._features(), files_in_window=10
+        )
+        assert "MASS_MODIFICATION" not in result["rules_triggered"]
+        assert result["suspicious"] is False
+
     def test_mass_modification_rule_triggers(self):
         result = self.detector.detect(
             self._features(), files_in_window=15

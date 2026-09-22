@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import joblib
 import pandas as pd
 
@@ -8,7 +10,7 @@ class MLPredictor:
     and predict ransomware-like activity.
     """
 
-    MODEL_PATH = "models/ransomware_detector.joblib"
+    MODEL_PATH = Path("models/ransomware_detector.joblib")
 
     FEATURES = [
         "file_size",
@@ -19,7 +21,15 @@ class MLPredictor:
     ]
 
     def __init__(self):
-        self.model = joblib.load(self.MODEL_PATH)
+        self.model_path = Path(self.MODEL_PATH)
+        self.model_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not self.model_path.exists():
+            from src.detection.train_model import train
+
+            train()
+
+        self.model = joblib.load(self.model_path)
 
     def predict(self, features):
         """
