@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import time
 import traceback
 
 from watchdog.events import FileSystemEventHandler
@@ -11,6 +12,13 @@ from src.response.response_engine import ResponseEngine
 from src.utils.logger import get_logger
 
 logger = get_logger("ransomware.monitor")
+
+# Dashboard stores are optional — only imported when the dashboard is active.
+try:
+    from src.dashboard.store import alert_store, event_store
+    _DASHBOARD_AVAILABLE = True
+except ImportError:
+    _DASHBOARD_AVAILABLE = False
 
 
 class FileMonitorHandler(FileSystemEventHandler):
@@ -31,7 +39,14 @@ class FileMonitorHandler(FileSystemEventHandler):
 
         # Number of seconds after which a new suspicious activity
         # period can generate another alert.
-        self.alert_reset_seconds = 10
+        self.alert_reset_seconds = 5
+
+        # Track the highest severity alerted so far so we can
+        # escalate if a worse event arrives during the cooldown.
+        self.last_alert_severity = None
+
+        # Severity ordering — higher index = worse.
+        self._severity_rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 
     def _create_event(self, event_type, file_path):
         """Create a structured filesystem event."""
@@ -66,6 +81,7 @@ class FileMonitorHandler(FileSystemEventHandler):
         if elapsed >= self.alert_reset_seconds:
             self.alert_active = False
             self.last_suspicious_time = None
+            self.last_alert_severity = None
 
     def _print_event(self, event):
         """Analyze event and generate an alert when necessary."""
@@ -102,15 +118,46 @@ class FileMonitorHandler(FileSystemEventHandler):
                 risk["severity"],
             )
 
+            # ── push to dashboard store ───────────────────────────
+            if _DASHBOARD_AVAILABLE:
+                event_store.push({
+                    "_ts": time.time(),
+                    "timestamp": event["timestamp"],
+                    "event_type": event["event_type"],
+                    "file_path": event["file_path"],
+                    "file_name": event["file_name"],
+                    "file_extension": event["file_extension"],
+                    "file_size": event["file_size"],
+                    "entropy": features.get("entropy", 0.0),
+                    "files_in_window": result["files_in_window"],
+                    "modification_rate": result["modification_rate"],
+                    "ml_prediction": ml_prediction,
+                    "ml_probability": ml_probability,
+                    "risk_score": risk["risk_score"],
+                    "severity": risk["severity"],
+                })
+
             if result["suspicious"]:
 
                 # Record the time of the latest suspicious event.
                 self.last_suspicious_time = datetime.now(timezone.utc)
 
-                # Generate only one alert for the current
-                # suspicious activity burst.
-                if not self.alert_active:
+                current_severity = risk["severity"]
+                current_rank = self._severity_rank.get(current_severity, 0)
+                last_rank = self._severity_rank.get(self.last_alert_severity, -1)
 
+                # Fire a new alert if:
+                #   (a) no alert has been sent yet, OR
+                #   (b) the cooldown has expired (handled by
+                #       _reset_alert_if_activity_expired above), OR
+                #   (c) this event is more severe than the last alert
+                #       — escalate immediately regardless of cooldown.
+                should_alert = (
+                    not self.alert_active
+                    or current_rank > last_rank
+                )
+
+                if should_alert:
                     alert = self.alert_generator.generate(result)
                     self._log_alert(alert)
 
@@ -118,7 +165,12 @@ class FileMonitorHandler(FileSystemEventHandler):
                     response = self.response_engine.respond(alert)
                     self._log_response(response)
 
+                    # ── push alert to dashboard store ─────────────
+                    if _DASHBOARD_AVAILABLE:
+                        alert_store.push(alert)
+
                     self.alert_active = True
+                    self.last_alert_severity = current_severity
 
         except Exception:
             logger.error("[!!! ERROR INSIDE EVENT HANDLER !!!]")

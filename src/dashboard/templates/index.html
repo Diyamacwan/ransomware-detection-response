@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RansomGuard — Live Detection Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+/* ── RESET ──────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:-apple-system,"Segoe UI",system-ui,sans-serif;
+  background:#070b14;
+  color:#e2e8f0;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* ── ANIMATED BG GRID ───────────────────────────────────────── */
+body::before{
+  content:'';
+  position:fixed;inset:0;
+  background-image:
+    linear-gradient(rgba(56,139,253,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(56,139,253,.04) 1px,transparent 1px);
+  background-size:40px 40px;
+  pointer-events:none;z-index:0;
+}
+
+/* ── HEADER ─────────────────────────────────────────────────── */
+header{
+  position:relative;z-index:10;
+  background:linear-gradient(135deg,#0d1b2e 0%,#0f2040 100%);
+  border-bottom:1px solid rgba(56,139,253,.25);
+  padding:0 28px;
+  height:62px;
+  display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 4px 32px rgba(0,0,0,.5);
+}
+.logo{
+  display:flex;align-items:center;gap:12px;
+}
+.logo-icon{
+  width:36px;height:36px;
+  background:linear-gradient(135deg,#f85149,#ff6b35);
+  border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;
+  box-shadow:0 0 16px rgba(248,81,73,.4);
+}
+.logo-text{font-size:16px;font-weight:800;letter-spacing:.4px;color:#f0f6ff}
+.logo-text span{
+  background:linear-gradient(90deg,#f85149,#ff9944);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.logo-badge{
+  font-size:9px;font-weight:700;
+  background:rgba(248,81,73,.15);
+  border:1px solid rgba(248,81,73,.3);
+  color:#f85149;
+  padding:2px 8px;border-radius:20px;letter-spacing:.8px;
+  margin-left:4px;
+}
+
+.header-right{display:flex;align-items:center;gap:20px}
+.uptime-box{
+  display:flex;flex-direction:column;align-items:flex-end;
+  font-size:10px;color:#8b949e;
+}
+.uptime-box .uptime-val{font-size:13px;font-weight:700;color:#58a6ff;font-family:monospace}
+
+.live-pill{
+  display:flex;align-items:center;gap:7px;
+  background:rgba(63,185,80,.12);
+  border:1px solid rgba(63,185,80,.25);
+  padding:5px 12px;border-radius:20px;
+  font-size:11px;font-weight:700;color:#3fb950;letter-spacing:.5px;
+}
+.pulse-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:#3fb950;
+  box-shadow:0 0 8px #3fb950;
+  animation:pulseGlow 1.8s ease-in-out infinite;
+}
+@keyframes pulseGlow{
+  0%,100%{opacity:1;box-shadow:0 0 8px #3fb950}
+  50%{opacity:.4;box-shadow:0 0 2px #3fb950}
+}
+
+/* ── THREAT BANNER ──────────────────────────────────────────── */
+#threat-banner{
+  position:relative;z-index:9;
+  padding:10px 28px;
+  display:none;
+  align-items:center;gap:12px;
+  font-size:13px;font-weight:700;letter-spacing:.3px;
+  animation:bannerPulse 1s ease-in-out infinite alternate;
+}
+#threat-banner.show{display:flex}
+#threat-banner.CRITICAL{
+  background:linear-gradient(90deg,rgba(248,81,73,.25),rgba(248,81,73,.08));
+  border-bottom:1px solid rgba(248,81,73,.4);
+  color:#f85149;
+}
+#threat-banner.HIGH{
+  background:linear-gradient(90deg,rgba(210,153,34,.2),rgba(210,153,34,.05));
+  border-bottom:1px solid rgba(210,153,34,.3);
+  color:#d29922;
+}
+@keyframes bannerPulse{from{opacity:.8}to{opacity:1}}
+.banner-icon{font-size:18px}
+
+/* ── MAIN GRID ──────────────────────────────────────────────── */
+main{
+  position:relative;z-index:1;
+  padding:20px 28px 28px;
+  display:grid;
+  grid-template-rows:auto auto auto auto;
+  gap:18px;
+}
+
+/* ── STAT CARDS ─────────────────────────────────────────────── */
+.stats-row{
+  display:grid;
+  grid-template-columns:repeat(6,1fr);
+  gap:14px;
+}
+.stat-card{
+  background:linear-gradient(145deg,#0d1b2e,#0f2040);
+  border:1px solid rgba(56,139,253,.15);
+  border-radius:14px;
+  padding:16px 18px;
+  position:relative;
+  overflow:hidden;
+  transition:transform .2s,box-shadow .2s;
+  cursor:default;
+}
+.stat-card:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.stat-card::before{
+  content:'';
+  position:absolute;top:0;left:0;right:0;height:3px;
+  background:var(--accent,#388bfd);
+  opacity:.7;
+}
+.stat-card.critical{--accent:#f85149}
+.stat-card.high{--accent:#d29922}
+.stat-card.medium{--accent:#388bfd}
+.stat-card.low{--accent:#3fb950}
+.stat-card.entropy{--accent:#a371f7}
+.stat-card.risk{--accent:#f0883e}
+
+.stat-card .s-icon{
+  font-size:22px;margin-bottom:8px;
+  display:block;
+}
+.stat-card .s-lbl{
+  font-size:9px;font-weight:700;color:#8b949e;
+  text-transform:uppercase;letter-spacing:.9px;margin-bottom:6px;
+}
+.stat-card .s-val{
+  font-size:28px;font-weight:800;
+  color:var(--accent,#e2e8f0);
+  line-height:1;font-family:'Courier New',monospace;
+  transition:all .3s;
+}
+.stat-card .s-sub{
+  font-size:10px;color:#8b949e;margin-top:4px;
+}
+.stat-card.critical .s-val{color:#f85149;text-shadow:0 0 20px rgba(248,81,73,.5)}
+.stat-card.high .s-val{color:#d29922;text-shadow:0 0 20px rgba(210,153,34,.4)}
+
+/* ── CHARTS ROW ─────────────────────────────────────────────── */
+.charts-top{
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr 280px;
+  gap:14px;
+}
+.chart-card{
+  background:linear-gradient(145deg,#0d1b2e,#0f2040);
+  border:1px solid rgba(56,139,253,.15);
+  border-radius:14px;
+  padding:18px 18px 14px;
+  position:relative;
+  overflow:hidden;
+}
+.chart-card::after{
+  content:'';
+  position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(56,139,253,.3),transparent);
+}
+.chart-header{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:14px;
+}
+.chart-header h3{
+  font-size:10px;font-weight:700;color:#8b949e;
+  text-transform:uppercase;letter-spacing:.8px;
+}
+.chart-badge{
+  font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;
+  background:rgba(56,139,253,.12);color:#388bfd;border:1px solid rgba(56,139,253,.2);
+}
+.chart-badge.danger{background:rgba(248,81,73,.12);color:#f85149;border-color:rgba(248,81,73,.2)}
+.chart-badge.warn{background:rgba(210,153,34,.12);color:#d29922;border-color:rgba(210,153,34,.2)}
+.chart-badge.purple{background:rgba(163,113,247,.12);color:#a371f7;border-color:rgba(163,113,247,.2)}
+
+/* ── THREAT GAUGE ───────────────────────────────────────────── */
+.gauge-card{
+  display:flex;flex-direction:column;
+}
+.gauge-wrapper{
+  flex:1;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:8px 0;
+}
+.gauge-ring{
+  position:relative;width:140px;height:140px;
+}
+.gauge-ring canvas{display:block}
+.gauge-center{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+.gauge-score{font-size:30px;font-weight:800;font-family:monospace;line-height:1}
+.gauge-label{font-size:9px;color:#8b949e;text-transform:uppercase;letter-spacing:.7px;margin-top:3px}
+.gauge-severity{
+  font-size:11px;font-weight:700;margin-top:10px;letter-spacing:.5px;
+  padding:4px 16px;border-radius:20px;
+  background:rgba(63,185,80,.12);color:#3fb950;border:1px solid rgba(63,185,80,.2);
+  transition:all .4s;
+}
+.gauge-severity.CRITICAL{background:rgba(248,81,73,.15);color:#f85149;border-color:rgba(248,81,73,.3);box-shadow:0 0 20px rgba(248,81,73,.2)}
+.gauge-severity.HIGH{background:rgba(210,153,34,.15);color:#d29922;border-color:rgba(210,153,34,.3)}
+.gauge-severity.MEDIUM{background:rgba(56,139,253,.15);color:#388bfd;border-color:rgba(56,139,253,.3)}
+
+/* ── RULES + EXTENSIONS ROW ─────────────────────────────────── */
+.charts-mid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+}
+
+/* ── BOTTOM ROW ─────────────────────────────────────────────── */
+.bottom-row{
+  display:grid;
+  grid-template-columns:1fr 420px;
+  gap:14px;
+  min-height:340px;
+}
+.table-card,.alert-feed{
+  background:linear-gradient(145deg,#0d1b2e,#0f2040);
+  border:1px solid rgba(56,139,253,.15);
+  border-radius:14px;
+  display:flex;flex-direction:column;
+  min-height:0;
+  overflow:hidden;
+}
+.section-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px 10px;
+  border-bottom:1px solid rgba(56,139,253,.1);
+  flex-shrink:0;
+}
+.section-header h3{
+  font-size:10px;font-weight:700;color:#8b949e;
+  text-transform:uppercase;letter-spacing:.8px;
+  display:flex;align-items:center;gap:7px;
+}
+.section-header h3 .sh-dot{
+  width:6px;height:6px;border-radius:50%;background:#3fb950;
+  box-shadow:0 0 6px #3fb950;animation:pulseGlow 1.8s ease-in-out infinite;
+}
+.row-count{font-size:10px;color:#8b949e;background:rgba(56,139,253,.1);
+  padding:2px 8px;border-radius:8px;border:1px solid rgba(56,139,253,.15)}
+
+/* ── EVENT TABLE ────────────────────────────────────────────── */
+.table-scroll{flex:1;overflow-y:auto;min-height:0}
+.table-scroll::-webkit-scrollbar{width:5px}
+.table-scroll::-webkit-scrollbar-track{background:transparent}
+.table-scroll::-webkit-scrollbar-thumb{background:rgba(56,139,253,.2);border-radius:3px}
+table{width:100%;border-collapse:collapse;font-size:11.5px}
+thead th{
+  position:sticky;top:0;z-index:2;
+  background:#0a1628;
+  color:#8b949e;font-weight:600;text-align:left;
+  padding:7px 10px;
+  border-bottom:1px solid rgba(56,139,253,.15);
+  white-space:nowrap;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+}
+tbody tr{
+  border-bottom:1px solid rgba(255,255,255,.03);
+  transition:background .15s;
+}
+tbody tr:hover{background:rgba(56,139,253,.05)}
+tbody tr.row-critical{background:rgba(248,81,73,.06)}
+tbody tr.row-critical:hover{background:rgba(248,81,73,.1)}
+tbody tr.row-high{background:rgba(210,153,34,.04)}
+tbody tr.row-high:hover{background:rgba(210,153,34,.08)}
+tbody td{padding:6px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+
+.tag{
+  display:inline-block;padding:2px 8px;border-radius:8px;
+  font-size:9px;font-weight:700;white-space:nowrap;letter-spacing:.4px;
+}
+.tag-CRITICAL{background:rgba(248,81,73,.18);color:#f85149;border:1px solid rgba(248,81,73,.25)}
+.tag-HIGH    {background:rgba(210,153,34,.18);color:#d29922;border:1px solid rgba(210,153,34,.25)}
+.tag-MEDIUM  {background:rgba(56,139,253,.18);color:#58a6ff;border:1px solid rgba(56,139,253,.25)}
+.tag-LOW     {background:rgba(63,185,80,.12);color:#3fb950;border:1px solid rgba(63,185,80,.18)}
+.tag-CREATED {background:rgba(63,185,80,.12);color:#3fb950;border:1px solid rgba(63,185,80,.18)}
+.tag-MODIFIED{background:rgba(56,139,253,.12);color:#58a6ff;border:1px solid rgba(56,139,253,.18)}
+.tag-DELETED {background:rgba(248,81,73,.12);color:#f85149;border:1px solid rgba(248,81,73,.18)}
+.tag-MOVED   {background:rgba(163,113,247,.12);color:#a371f7;border:1px solid rgba(163,113,247,.18)}
+
+.entropy-cell{font-family:monospace;font-size:11px}
+.entropy-cell.danger{color:#f85149;font-weight:700}
+.entropy-cell.warn  {color:#d29922;font-weight:700}
+.entropy-cell.safe  {color:#8b949e}
+
+/* ── ALERT FEED ─────────────────────────────────────────────── */
+.alert-list{
+  flex:1;overflow-y:auto;padding:10px 12px;
+  display:flex;flex-direction:column;gap:10px;
+  min-height:0;
+}
+.alert-list::-webkit-scrollbar{width:5px}
+.alert-list::-webkit-scrollbar-track{background:transparent}
+.alert-list::-webkit-scrollbar-thumb{background:rgba(56,139,253,.2);border-radius:3px}
+
+.alert-item{
+  border-radius:10px;padding:12px 14px;
+  border:1px solid rgba(255,255,255,.06);
+  border-left:3px solid #30363d;
+  animation:slideIn .35s cubic-bezier(.34,1.56,.64,1);
+  position:relative;overflow:hidden;
+}
+.alert-item::before{
+  content:'';position:absolute;top:0;right:0;
+  width:60px;height:60px;border-radius:50%;
+  opacity:.06;
+  transform:translate(20px,-20px);
+}
+@keyframes slideIn{from{opacity:0;transform:translateY(-10px) scale(.97)}to{opacity:1;transform:none}}
+.alert-item.CRITICAL{background:linear-gradient(135deg,#1c0505,#1a0808);border-left-color:#f85149}
+.alert-item.CRITICAL::before{background:#f85149}
+.alert-item.HIGH    {background:linear-gradient(135deg,#1c1400,#1a1200);border-left-color:#d29922}
+.alert-item.HIGH::before{background:#d29922}
+.alert-item.MEDIUM  {background:linear-gradient(135deg,#050d1c,#060f22);border-left-color:#388bfd}
+.alert-item.MEDIUM::before{background:#388bfd}
+.alert-item.LOW     {background:linear-gradient(135deg,#030d06,#041209);border-left-color:#3fb950}
+
+.a-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.a-id{font-size:9px;color:#8b949e;font-family:monospace}
+.a-sev-badge{font-size:10px;font-weight:800;padding:2px 10px;border-radius:10px;letter-spacing:.4px}
+.CRITICAL .a-sev-badge{background:rgba(248,81,73,.2);color:#f85149;border:1px solid rgba(248,81,73,.3)}
+.HIGH     .a-sev-badge{background:rgba(210,153,34,.2);color:#d29922;border:1px solid rgba(210,153,34,.3)}
+.MEDIUM   .a-sev-badge{background:rgba(56,139,253,.2);color:#58a6ff;border:1px solid rgba(56,139,253,.3)}
+.LOW      .a-sev-badge{background:rgba(63,185,80,.15);color:#3fb950;border:1px solid rgba(63,185,80,.25)}
+
+.a-file{font-size:11px;color:#c9d1d9;font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px}
+.a-reasons{font-size:11px;color:#8b949e;line-height:1.5;margin-bottom:6px}
+.a-reasons b{color:#c9d1d9}
+
+.a-metrics{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:5px}
+.a-metric{
+  font-size:9px;padding:2px 8px;border-radius:6px;
+  background:rgba(255,255,255,.05);color:#8b949e;border:1px solid rgba(255,255,255,.07);
+}
+.a-metric b{color:#e2e8f0}
+
+.mitre-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:9px;font-weight:700;letter-spacing:.4px;
+  background:rgba(163,113,247,.12);color:#a371f7;
+  border:1px solid rgba(163,113,247,.2);
+  padding:2px 8px;border-radius:6px;margin-top:2px;
+}
+
+.a-ml-bar{margin-top:7px}
+.a-ml-label{font-size:9px;color:#8b949e;margin-bottom:3px}
+.bar-track{background:rgba(255,255,255,.07);border-radius:4px;height:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
+.bar-fill.high-prob{background:linear-gradient(90deg,#f85149,#ff6b35)}
+.bar-fill.low-prob{background:linear-gradient(90deg,#3fb950,#58a6ff)}
+
+.empty-state{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:8px;color:#8b949e;font-size:12px;padding:24px;text-align:center;
+}
+.empty-state .empty-icon{font-size:32px;opacity:.4}
+
+/* ── FOOTER ─────────────────────────────────────────────────── */
+footer{
+  position:relative;z-index:10;
+  padding:10px 28px;
+  border-top:1px solid rgba(56,139,253,.12);
+  background:#0a1020;
+  display:flex;align-items:center;justify-content:space-between;
+  font-size:10px;color:#8b949e;
+}
+.footer-left{display:flex;align-items:center;gap:16px}
+.footer-stat{display:flex;align-items:center;gap:5px}
+.footer-stat .fs-dot{
+  width:5px;height:5px;border-radius:50%;
+}
+#conn-status{font-size:11px;font-weight:600;display:flex;align-items:center;gap:5px}
+#conn-status.ok{color:#3fb950}
+#conn-status.err{color:#f85149}
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🛡</div>
+    <div>
+      <div class="logo-text">RansomGuard <span>Detection</span> & Response</div>
+    </div>
+    <span class="logo-badge">LIVE</span>
+  </div>
+  <div class="header-right">
+    <div class="uptime-box">
+      <span>System Uptime</span>
+      <span class="uptime-val" id="uptime">00:00:00</span>
+    </div>
+    <div class="uptime-box">
+      <span>Last Event</span>
+      <span class="uptime-val" id="last-event-time">—</span>
+    </div>
+    <div class="live-pill"><div class="pulse-dot"></div>MONITORING</div>
+  </div>
+</header>
+
+<!-- ── THREAT BANNER ── -->
+<div id="threat-banner">
+  <span class="banner-icon">🚨</span>
+  <span id="banner-text">CRITICAL THREAT DETECTED — Immediate action recommended</span>
+</div>
+
+<main>
+
+  <!-- ── STAT CARDS ── -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <span class="s-icon">📁</span>
+      <div class="s-lbl">Total Events</div>
+      <div class="s-val" id="s-events">0</div>
+      <div class="s-sub">Filesystem ops</div>
+    </div>
+    <div class="stat-card critical">
+      <span class="s-icon">🔴</span>
+      <div class="s-lbl">Critical Alerts</div>
+      <div class="s-val" id="s-critical">0</div>
+      <div class="s-sub">Immediate action</div>
+    </div>
+    <div class="stat-card high">
+      <span class="s-icon">🟡</span>
+      <div class="s-lbl">High Alerts</div>
+      <div class="s-val" id="s-high">0</div>
+      <div class="s-sub">Isolation recommended</div>
+    </div>
+    <div class="stat-card medium">
+      <span class="s-icon">🔵</span>
+      <div class="s-lbl">Medium Alerts</div>
+      <div class="s-val" id="s-medium">0</div>
+      <div class="s-sub">Under review</div>
+    </div>
+    <div class="stat-card entropy">
+      <span class="s-icon">〰</span>
+      <div class="s-lbl">Avg Entropy (60s)</div>
+      <div class="s-val" id="s-entropy">—</div>
+      <div class="s-sub">Shannon bits/byte</div>
+    </div>
+    <div class="stat-card risk">
+      <span class="s-icon">⚡</span>
+      <div class="s-lbl">Max Risk Score</div>
+      <div class="s-val" id="s-risk">0</div>
+      <div class="s-sub">Out of 100</div>
+    </div>
+  </div>
+
+  <!-- ── TOP CHARTS: entropy / modrate / risk / gauge ── -->
+  <div class="charts-top">
+    <div class="chart-card">
+      <div class="chart-header">
+        <h3>Shannon Entropy</h3>
+        <span class="chart-badge purple" id="badge-entropy">0.000</span>
+      </div>
+      <canvas id="chart-entropy" height="130"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <h3>Modification Rate</h3>
+        <span class="chart-badge" id="badge-modrate">0.0/s</span>
+      </div>
+      <canvas id="chart-modrate" height="130"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <h3>Risk Score Timeline</h3>
+        <span class="chart-badge warn" id="badge-risk">0</span>
+      </div>
+      <canvas id="chart-risk" height="130"></canvas>
+    </div>
+    <div class="chart-card gauge-card">
+      <div class="chart-header">
+        <h3>Threat Level</h3>
+        <span class="chart-badge" id="badge-threat">NOMINAL</span>
+      </div>
+      <div class="gauge-wrapper">
+        <div class="gauge-ring">
+          <canvas id="chart-gauge" width="140" height="140"></canvas>
+          <div class="gauge-center">
+            <div class="gauge-score" id="gauge-val" style="color:#3fb950">0</div>
+            <div class="gauge-label">/ 100</div>
+          </div>
+        </div>
+        <div class="gauge-severity" id="gauge-severity">NOMINAL</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MID CHARTS: severity breakdown + rules triggered ── -->
+  <div class="charts-mid">
+    <div class="chart-card">
+      <div class="chart-header">
+        <h3>Alert Severity Distribution</h3>
+        <span class="chart-badge" id="badge-total-alerts">0 total</span>
+      </div>
+      <canvas id="chart-severity" height="160"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <h3>Detection Rules Triggered</h3>
+        <span class="chart-badge danger" id="badge-rules">0 triggers</span>
+      </div>
+      <canvas id="chart-rules" height="160"></canvas>
+    </div>
+  </div>
+
+  <!-- ── BOTTOM: event table + alert feed ── -->
+  <div class="bottom-row">
+    <div class="table-card">
+      <div class="section-header">
+        <h3><span class="sh-dot"></span>Live Event Stream</h3>
+        <span class="row-count" id="event-count">0 events</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>File</th>
+              <th>Ext</th>
+              <th>Size</th>
+              <th>Entropy</th>
+              <th>Files/Win</th>
+              <th>ML %</th>
+              <th>Risk</th>
+              <th>Severity</th>
+            </tr>
+          </thead>
+          <tbody id="event-tbody"></tbody>
+        </table>
+        <div id="event-empty" class="empty-state">
+          <div class="empty-icon">👁</div>
+          <div>Watching for filesystem events…</div>
+          <div style="font-size:10px;opacity:.6">Run <code style="background:rgba(255,255,255,.07);padding:1px 6px;border-radius:4px">python main.py simulate</code> in another terminal</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="alert-feed">
+      <div class="section-header">
+        <h3><span class="sh-dot"></span>Alert Feed</h3>
+        <span class="row-count" id="alert-count">0 alerts</span>
+      </div>
+      <div class="alert-list" id="alert-list">
+        <div id="alert-empty" class="empty-state">
+          <div class="empty-icon">🛡</div>
+          <div>System is clean</div>
+          <div style="font-size:10px;opacity:.6">No threats detected yet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <div class="footer-left">
+    <span class="footer-stat">
+      <span class="fs-dot" style="background:#3fb950"></span>
+      CE452 Minor Project
+    </span>
+    <span class="footer-stat">
+      <span class="fs-dot" style="background:#388bfd"></span>
+      Random Forest ML + Rule-based Detection
+    </span>
+    <span class="footer-stat">
+      <span class="fs-dot" style="background:#a371f7"></span>
+      MITRE ATT&amp;CK Mapped
+    </span>
+  </div>
+  <div id="conn-status" class="ok">● Connected</div>
+</footer>
+
+<script>
+/* ════════════════════════════════════════════════════
+   CHART.JS GLOBAL DEFAULTS
+════════════════════════════════════════════════════ */
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = 'rgba(255,255,255,0.05)';
+Chart.defaults.font.family = "-apple-system,'Segoe UI',system-ui,sans-serif";
+
+const CHART_MAX = 80;
+
+/* gradient helper */
+function mkGrad(ctx, top, bot) {
+  const g = ctx.createLinearGradient(0,0,0,200);
+  g.addColorStop(0, top);
+  g.addColorStop(1, bot);
+  return g;
+}
+
+/* ── Entropy chart ── */
+const entropyCtx = document.getElementById('chart-entropy').getContext('2d');
+const entropyGrad = mkGrad(entropyCtx,'rgba(163,113,247,.5)','rgba(163,113,247,.03)');
+const entropyChart = new Chart(entropyCtx, {
+  type:'line',
+  data:{
+    labels:[],
+    datasets:[{data:[],borderColor:'#a371f7',backgroundColor:entropyGrad,fill:true,
+      tension:.4,pointRadius:0,borderWidth:2.5}]
+  },
+  options:{
+    responsive:true,animation:false,
+    plugins:{legend:{display:false},tooltip:{
+      callbacks:{label:i=>' Entropy: '+i.raw.toFixed(4)}
+    }},
+    scales:{
+      x:{display:false},
+      y:{min:0,max:8,grid:{color:'rgba(255,255,255,.04)'},
+        ticks:{color:'#8b949e',font:{size:9}}}
+    }
+  }
+});
+
+/* ── Mod rate chart ── */
+const modrateCtx = document.getElementById('chart-modrate').getContext('2d');
+const modrateGrad = mkGrad(modrateCtx,'rgba(56,139,253,.5)','rgba(56,139,253,.03)');
+const modrateChart = new Chart(modrateCtx, {
+  type:'line',
+  data:{
+    labels:[],
+    datasets:[{data:[],borderColor:'#388bfd',backgroundColor:modrateGrad,fill:true,
+      tension:.4,pointRadius:0,borderWidth:2.5}]
+  },
+  options:{
+    responsive:true,animation:false,
+    plugins:{legend:{display:false},tooltip:{
+      callbacks:{label:i=>' Rate: '+i.raw.toFixed(2)+'/s'}
+    }},
+    scales:{
+      x:{display:false},
+      y:{min:0,grid:{color:'rgba(255,255,255,.04)'},
+        ticks:{color:'#8b949e',font:{size:9}}}
+    }
+  }
+});
+
+/* ── Risk score chart ── */
+const riskCtx = document.getElementById('chart-risk').getContext('2d');
+const riskGrad = mkGrad(riskCtx,'rgba(240,136,62,.5)','rgba(240,136,62,.03)');
+const riskChart = new Chart(riskCtx, {
+  type:'line',
+  data:{
+    labels:[],
+    datasets:[{data:[],borderColor:'#f0883e',backgroundColor:riskGrad,fill:true,
+      tension:.4,pointRadius:0,borderWidth:2.5}]
+  },
+  options:{
+    responsive:true,animation:false,
+    plugins:{legend:{display:false},tooltip:{
+      callbacks:{label:i=>' Risk: '+i.raw+'/100'}
+    }},
+    scales:{
+      x:{display:false},
+      y:{min:0,max:100,grid:{color:'rgba(255,255,255,.04)'},
+        ticks:{color:'#8b949e',font:{size:9}}}
+    }
+  }
+});
+
+/* ── Gauge (doughnut) ── */
+const gaugeCtx = document.getElementById('chart-gauge').getContext('2d');
+const gaugeChart = new Chart(gaugeCtx, {
+  type:'doughnut',
+  data:{
+    datasets:[{
+      data:[0,100],
+      backgroundColor:['#3fb950','rgba(255,255,255,.05)'],
+      borderWidth:0,
+      circumference:270,
+      rotation:225,
+    }]
+  },
+  options:{
+    responsive:false,animation:{duration:600},
+    cutout:'78%',
+    plugins:{legend:{display:false},tooltip:{enabled:false}}
+  }
+});
+
+function updateGauge(score){
+  const colors = score>=80?'#f85149':score>=60?'#d29922':score>=30?'#388bfd':'#3fb950';
+  const sev    = score>=80?'CRITICAL':score>=60?'HIGH':score>=30?'MEDIUM':'NOMINAL';
+  gaugeChart.data.datasets[0].data=[score,100-score];
+  gaugeChart.data.datasets[0].backgroundColor=[colors,'rgba(255,255,255,.05)'];
+  gaugeChart.update();
+  document.getElementById('gauge-val').textContent=score;
+  document.getElementById('gauge-val').style.color=colors;
+  const el=document.getElementById('gauge-severity');
+  el.textContent=sev;
+  el.className='gauge-severity '+sev;
+  // badge
+  const b=document.getElementById('badge-threat');
+  b.textContent=sev;
+  b.className='chart-badge'+
+    (score>=80?' danger':score>=60?' warn':score>=30?' ':'');
+}
+
+/* ── Severity doughnut ── */
+const sevCtx = document.getElementById('chart-severity').getContext('2d');
+const severityChart = new Chart(sevCtx, {
+  type:'doughnut',
+  data:{
+    labels:['Critical','High','Medium','Low'],
+    datasets:[{
+      data:[0,0,0,0],
+      backgroundColor:['rgba(248,81,73,.8)','rgba(210,153,34,.8)','rgba(56,139,253,.8)','rgba(63,185,80,.8)'],
+      borderColor:['#0d1b2e','#0d1b2e','#0d1b2e','#0d1b2e'],
+      borderWidth:3,hoverOffset:8
+    }]
+  },
+  options:{
+    responsive:true,animation:{duration:600},
+    cutout:'62%',
+    plugins:{
+      legend:{
+        display:true,position:'right',
+        labels:{color:'#8b949e',font:{size:10},boxWidth:10,padding:10}
+      },
+      tooltip:{callbacks:{label:i=>` ${i.label}: ${i.raw} alert${i.raw===1?'':'s'}`}}
+    }
+  }
+});
+
+/* ── Rules bar chart ── */
+const rulesCtx = document.getElementById('chart-rules').getContext('2d');
+const rulesChart = new Chart(rulesCtx, {
+  type:'bar',
+  data:{
+    labels:['Suspicious\nExtension','High\nEntropy','Mass\nModification','Ransom\nNote'],
+    datasets:[{
+      label:'Triggers',
+      data:[0,0,0,0],
+      backgroundColor:[
+        'rgba(248,81,73,.7)','rgba(163,113,247,.7)',
+        'rgba(210,153,34,.7)','rgba(240,136,62,.7)'
+      ],
+      borderColor:['#f85149','#a371f7','#d29922','#f0883e'],
+      borderWidth:1.5,borderRadius:6,
+    }]
+  },
+  options:{
+    responsive:true,animation:{duration:600},
+    plugins:{legend:{display:false},tooltip:{
+      callbacks:{label:i=>` Triggers: ${i.raw}`}
+    }},
+    scales:{
+      x:{grid:{display:false},ticks:{color:'#8b949e',font:{size:9}}},
+      y:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#8b949e',font:{size:9},stepSize:1},min:0}
+    }
+  }
+});
+
+/* rule counters */
+const ruleCounts = {SUSPICIOUS_EXTENSION:0,HIGH_ENTROPY:0,MASS_MODIFICATION:0,RANSOM_NOTE:0};
+function updateRulesChart(){
+  rulesChart.data.datasets[0].data=[
+    ruleCounts.SUSPICIOUS_EXTENSION,
+    ruleCounts.HIGH_ENTROPY,
+    ruleCounts.MASS_MODIFICATION,
+    ruleCounts.RANSOM_NOTE,
+  ];
+  rulesChart.update('none');
+  const total=Object.values(ruleCounts).reduce((a,b)=>a+b,0);
+  document.getElementById('badge-rules').textContent=total+' triggers';
+}
+
+function pushChart(chart,label,value){
+  chart.data.labels.push(label);
+  chart.data.datasets[0].data.push(value);
+  if(chart.data.labels.length>CHART_MAX){
+    chart.data.labels.shift();
+    chart.data.datasets[0].data.shift();
+  }
+  chart.update('none');
+}
+
+/* ════════════════════════════════════════════════════
+   UPTIME COUNTER
+════════════════════════════════════════════════════ */
+const startTime=Date.now();
+function pad(n){return String(n).padStart(2,'0')}
+setInterval(()=>{
+  const s=Math.floor((Date.now()-startTime)/1000);
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
+  document.getElementById('uptime').textContent=`${pad(h)}:${pad(m)}:${pad(sec)}`;
+},1000);
+
+/* ════════════════════════════════════════════════════
+   STATS POLLING  (every 3s)
+════════════════════════════════════════════════════ */
+function updateStats(){
+  fetch('/api/stats').then(r=>r.json()).then(d=>{
+    document.getElementById('s-events').textContent  = d.total_events;
+    document.getElementById('s-critical').textContent= d.severity_counts.CRITICAL||0;
+    document.getElementById('s-high').textContent    = d.severity_counts.HIGH||0;
+    document.getElementById('s-medium').textContent  = d.severity_counts.MEDIUM||0;
+    document.getElementById('s-entropy').textContent =
+      d.avg_entropy_60s>0 ? d.avg_entropy_60s.toFixed(3) : '—';
+    document.getElementById('s-risk').textContent    = d.max_risk_score||0;
+    document.getElementById('badge-total-alerts').textContent=
+      (d.total_alerts||0)+' total';
+    updateGauge(d.max_risk_score||0);
+
+    /* severity doughnut */
+    const sc=d.severity_counts||{};
+    severityChart.data.datasets[0].data=[
+      sc.CRITICAL||0,sc.HIGH||0,sc.MEDIUM||0,sc.LOW||0
+    ];
+    severityChart.update('none');
+
+    /* threat banner */
+    const banner=document.getElementById('threat-banner');
+    if((sc.CRITICAL||0)>0){
+      banner.className='show CRITICAL';
+      document.getElementById('banner-text').textContent=
+        `🚨 CRITICAL THREAT ACTIVE — ${sc.CRITICAL} critical alert(s) require immediate containment`;
+    } else if((sc.HIGH||0)>0){
+      banner.className='show HIGH';
+      document.getElementById('banner-text').textContent=
+        `⚠ HIGH SEVERITY THREAT — ${sc.HIGH} high-priority alert(s) detected, isolation recommended`;
+    } else {
+      banner.className='';
+    }
+  }).catch(()=>{});
+}
+setInterval(updateStats,3000);
+updateStats();
+
+/* ════════════════════════════════════════════════════
+   HELPERS
+════════════════════════════════════════════════════ */
+const MITRE_MAP={
+  SUSPICIOUS_EXTENSION:{id:'T1486',name:'Data Encrypted for Impact'},
+  HIGH_ENTROPY        :{id:'T1027',name:'Obfuscated Files or Information'},
+  MASS_MODIFICATION   :{id:'T1486',name:'Data Encrypted for Impact'},
+  RANSOM_NOTE         :{id:'T1491',name:'Defacement / Ransom Note'},
+};
+
+function shortTime(ts){
+  if(!ts)return'—';
+  try{return new Date(ts).toLocaleTimeString('en-GB',{hour12:false})}
+  catch{return ts}
+}
+function shortFile(p){
+  if(!p)return'—';
+  const parts=(p||'').replace(/\\/g,'/').split('/');
+  return parts.slice(-2).join('/');
+}
+function fmtBytes(b){
+  if(!b)return'0 B';
+  if(b<1024)return b+' B';
+  if(b<1048576)return(b/1024).toFixed(1)+' KB';
+  return(b/1048576).toFixed(1)+' MB';
+}
+function entropyClass(v){
+  const n=parseFloat(v);
+  if(n>=7)return'danger';if(n>=5)return'warn';return'safe';
+}
+function tag(cls,txt){return`<span class="tag tag-${cls}">${txt}</span>`}
+
+let totalEventRows=0,totalAlertCards=0;
+
+/* ════════════════════════════════════════════════════
+   EVENT TABLE  (max 300 rows, newest at top)
+════════════════════════════════════════════════════ */
+const tbody=document.getElementById('event-tbody');
+const eventEmpty=document.getElementById('event-empty');
+
+function addEventRow(e){
+  eventEmpty.style.display='none';
+  totalEventRows++;
+  document.getElementById('event-count').textContent=totalEventRows+' events';
+  document.getElementById('last-event-time').textContent=shortTime(e.timestamp);
+
+  const entropy=typeof e.entropy==='number'?e.entropy.toFixed(3):'—';
+  const fiw=e.files_in_window??'—';
+  const mlPct=typeof e.ml_probability==='number'
+    ?(e.ml_probability*100).toFixed(0)+'%':'—';
+  const sev=e.severity||'LOW';
+
+  const tr=document.createElement('tr');
+  if(sev==='CRITICAL')tr.className='row-critical';
+  else if(sev==='HIGH')tr.className='row-high';
+  tr.innerHTML=`
+    <td style="color:#8b949e;font-size:10px;font-family:monospace">${shortTime(e.timestamp)}</td>
+    <td>${tag(e.event_type||'EVENT',e.event_type||'EVENT')}</td>
+    <td title="${e.file_path||''}" style="color:#c9d1d9">${shortFile(e.file_path)}</td>
+    <td style="color:#8b949e">${e.file_extension||'—'}</td>
+    <td style="color:#8b949e">${fmtBytes(e.file_size)}</td>
+    <td class="entropy-cell ${entropyClass(entropy)}">${entropy}</td>
+    <td style="text-align:center;color:${fiw>=10?'#f85149':'#8b949e'}">${fiw}</td>
+    <td style="color:${parseFloat(mlPct)>=70?'#f85149':parseFloat(mlPct)>=40?'#d29922':'#8b949e'}">${mlPct}</td>
+    <td style="font-weight:700;color:${e.risk_score>=80?'#f85149':e.risk_score>=60?'#d29922':e.risk_score>=30?'#388bfd':'#8b949e'}">${e.risk_score??0}</td>
+    <td>${tag(sev,sev)}</td>
+  `;
+  tbody.insertBefore(tr,tbody.firstChild);
+  while(tbody.rows.length>300)tbody.deleteRow(tbody.rows.length-1);
+
+  /* push to charts */
+  const label=shortTime(e.timestamp);
+  if(typeof e.entropy==='number')       pushChart(entropyChart,label,e.entropy);
+  if(typeof e.modification_rate==='number') pushChart(modrateChart,label,e.modification_rate);
+  if(typeof e.risk_score==='number')    pushChart(riskChart,label,e.risk_score);
+
+  /* chart badges */
+  if(typeof e.entropy==='number')
+    document.getElementById('badge-entropy').textContent=e.entropy.toFixed(3);
+  if(typeof e.modification_rate==='number')
+    document.getElementById('badge-modrate').textContent=e.modification_rate.toFixed(1)+'/s';
+  if(typeof e.risk_score==='number')
+    document.getElementById('badge-risk').textContent=e.risk_score;
+}
+
+/* ════════════════════════════════════════════════════
+   ALERT FEED  (max 50, newest at top)
+════════════════════════════════════════════════════ */
+const alertList=document.getElementById('alert-list');
+const alertEmpty=document.getElementById('alert-empty');
+
+function addAlertCard(a){
+  alertEmpty.style.display='none';
+  totalAlertCards++;
+  document.getElementById('alert-count').textContent=totalAlertCards+' alerts';
+
+  const sev=a.severity||'LOW';
+  const reasons=(a.detection_reasons||[]);
+  const mlPct=typeof a.ml_probability==='number'
+    ?(a.ml_probability*100).toFixed(1):'—';
+  const isHighProb=parseFloat(mlPct)>=60;
+
+  /* build MITRE tags */
+  const mitreSet=new Set();
+  (a.detection_reasons||[]).forEach(r=>{
+    // crude keyword match to pick a MITRE tag
+    if(/extension/i.test(r))mitreSet.add('SUSPICIOUS_EXTENSION');
+    if(/entropy/i.test(r))mitreSet.add('HIGH_ENTROPY');
+    if(/mass|modif/i.test(r))mitreSet.add('MASS_MODIFICATION');
+    if(/ransom|note/i.test(r))mitreSet.add('RANSOM_NOTE');
+  });
+
+  const mitreTags=[...mitreSet].map(k=>{
+    const m=MITRE_MAP[k];
+    if(!m)return'';
+    // increment rule chart
+    if(ruleCounts[k]!==undefined)ruleCounts[k]++;
+    return`<span class="mitre-badge">⚔ ${m.id} · ${m.name}</span>`;
+  }).join(' ');
+
+  updateRulesChart();
+
+  const div=document.createElement('div');
+  div.className=`alert-item ${sev}`;
+  div.innerHTML=`
+    <div class="a-header">
+      <span class="a-id">${a.alert_id||''}</span>
+      <span class="a-sev-badge">${sev}</span>
+    </div>
+    <div class="a-file" title="${a.file_path||''}">📄 ${shortFile(a.file_path)}</div>
+    <div class="a-reasons"><b>Detection:</b> ${reasons.join(' · ')||a.recommended_action||'—'}</div>
+    <div class="a-metrics">
+      <span class="a-metric">Risk <b>${a.risk_score??'—'}/100</b></span>
+      <span class="a-metric">Files affected <b>${a.files_affected??'—'}</b></span>
+      <span class="a-metric">ML confidence <b>${mlPct}%</b></span>
+      <span class="a-metric">${shortTime(a.timestamp)}</span>
+    </div>
+    ${mitreTags?`<div style="margin-top:4px">${mitreTags}</div>`:''}
+    <div class="a-ml-bar">
+      <div class="a-ml-label">ML Ransomware Probability — ${mlPct}%</div>
+      <div class="bar-track">
+        <div class="bar-fill ${isHighProb?'high-prob':'low-prob'}"
+          style="width:${Math.min(parseFloat(mlPct)||0,100)}%"></div>
+      </div>
+    </div>
+  `;
+
+  alertList.insertBefore(div,alertList.firstChild);
+  const items=alertList.querySelectorAll('.alert-item');
+  if(items.length>50)items[items.length-1].remove();
+
+  /* flash critical stat card */
+  if(sev==='CRITICAL')flashCard('s-critical');
+  else if(sev==='HIGH')flashCard('s-high');
+}
+
+function flashCard(id){
+  const el=document.getElementById(id);
+  el.style.textShadow='0 0 30px currentColor';
+  setTimeout(()=>{el.style.textShadow=''},900);
+}
+
+/* ════════════════════════════════════════════════════
+   LOAD HISTORY ON PAGE OPEN
+════════════════════════════════════════════════════ */
+fetch('/api/events?n=100').then(r=>r.json()).then(events=>{
+  events.slice().reverse().forEach(addEventRow);
+}).catch(()=>{});
+
+fetch('/api/alerts').then(r=>r.json()).then(alerts=>{
+  alerts.slice().reverse().forEach(addAlertCard);
+}).catch(()=>{});
+
+/* ════════════════════════════════════════════════════
+   SSE — LIVE STREAMS
+════════════════════════════════════════════════════ */
+const connStatus=document.getElementById('conn-status');
+
+function connectEventStream(){
+  const es=new EventSource('/api/stream/events');
+  es.onopen=()=>{connStatus.textContent='● Connected';connStatus.className='ok'};
+  es.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.type==='ping')return;
+    addEventRow(d);
+  };
+  es.onerror=()=>{
+    connStatus.textContent='● Reconnecting…';connStatus.className='err';
+    es.close();setTimeout(connectEventStream,3000);
+  };
+}
+
+function connectAlertStream(){
+  const es=new EventSource('/api/stream/alerts');
+  es.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(d.type==='ping')return;
+    addAlertCard(d);
+    updateStats();
+  };
+  es.onerror=()=>{es.close();setTimeout(connectAlertStream,3000)};
+}
+
+connectEventStream();
+connectAlertStream();
+</script>
+</body>
+</html>

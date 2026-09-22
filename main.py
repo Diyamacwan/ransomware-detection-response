@@ -23,6 +23,7 @@ Usage
 
 import argparse
 import sys
+import threading
 
 from src.utils.logger import get_logger
 
@@ -69,6 +70,37 @@ def cmd_test_model(_args):
     test_model()
 
 
+def cmd_dashboard(args):
+    """Start the file monitor + live web dashboard together."""
+    from src.monitor.file_monitor import start_monitor
+    from src.dashboard.server import start_server
+
+    directory = args.directory
+    host = args.host
+    port = args.port
+
+    logger.info("Starting ransomware monitor on: %s", directory)
+    logger.info("Starting dashboard at http://%s:%s", host, port)
+
+    # Run the Flask server in a background daemon thread so Ctrl-C
+    # shuts down both the monitor and the server cleanly.
+    server_thread = threading.Thread(
+        target=start_server,
+        kwargs={"host": host, "port": port, "debug": False},
+        daemon=True,
+        name="dashboard-server",
+    )
+    server_thread.start()
+
+    try:
+        start_monitor(directory)
+    except FileNotFoundError as exc:
+        logger.error("%s", exc)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        logger.info("Dashboard and monitor stopped.")
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="main.py",
@@ -113,6 +145,32 @@ def build_parser():
         help="Test the trained ML model with built-in sample data.",
     )
     test_parser.set_defaults(func=cmd_test_model)
+
+    # ── dashboard ────────────────────────────────────────────
+    dash_parser = subparsers.add_parser(
+        "dashboard",
+        help="Start the file monitor + live web dashboard (default: http://127.0.0.1:5000).",
+    )
+    dash_parser.add_argument(
+        "--directory",
+        default="test_data",
+        metavar="DIR",
+        help="Directory to monitor (default: test_data).",
+    )
+    dash_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        metavar="HOST",
+        help="Dashboard host (default: 127.0.0.1).",
+    )
+    dash_parser.add_argument(
+        "--port",
+        default=5000,
+        type=int,
+        metavar="PORT",
+        help="Dashboard port (default: 5000).",
+    )
+    dash_parser.set_defaults(func=cmd_dashboard)
 
     return parser
 
